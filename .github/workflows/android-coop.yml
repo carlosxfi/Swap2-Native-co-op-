@@ -1,0 +1,43 @@
+name: Build Android co-op APK
+
+on:
+  push:
+    branches: [oot-coop-android]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout source and pinned co-op
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: |
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
+
+      - name: Build Zelda co-op test APK
+        working-directory: android/app
+        run: |
+          chmod +x gradlew
+          ./gradlew -PnxPackEngine=fake -PnxGames=0400486024DEC000 apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: swap2-oot-coop-protocol-test
+          path: android/app/out/*.apk
+          if-no-files-found: error
