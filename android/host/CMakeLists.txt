@@ -21,6 +21,40 @@ elseif(NOT GAME AND NOT NX_RUNTIME_PROFILE)
 endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+# OoT co-op protocol client. The exact v0.10.1 source is pinned as a submodule;
+# this first integration stage provides only the encrypted protocol-11 client.
+# No guest memory is read or written yet.
+set(OOT_COOP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/oot-remake-multiplayer")
+set(SWAP2_OOT_COOP_AVAILABLE OFF)
+if(EXISTS "${OOT_COOP_ROOT}/coop/net/src/client.cpp")
+  enable_language(CXX)
+  set(CMAKE_CXX_STANDARD 20)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+  # These upstream files fetch fixed ENet 1.3.18 and Monocypher 4.0.2 revisions.
+  include("${OOT_COOP_ROOT}/cmake/enet.cmake")
+  include("${OOT_COOP_ROOT}/cmake/monocypher.cmake")
+
+  add_library(swap2_oot_coop_protocol STATIC
+    "${OOT_COOP_ROOT}/coop/protocol/src/codec.cpp"
+    "${OOT_COOP_ROOT}/coop/protocol/src/join_password.cpp"
+    "${OOT_COOP_ROOT}/coop/protocol/src/traffic_crypto.cpp")
+  target_include_directories(swap2_oot_coop_protocol PUBLIC
+    "${OOT_COOP_ROOT}/coop/protocol/include")
+  target_link_libraries(swap2_oot_coop_protocol PRIVATE monocypher)
+
+  add_library(swap2_oot_coop_net STATIC
+    "${OOT_COOP_ROOT}/coop/net/src/clock.cpp"
+    "${OOT_COOP_ROOT}/coop/net/src/client.cpp")
+  target_include_directories(swap2_oot_coop_net PUBLIC
+    "${OOT_COOP_ROOT}/coop/net/include")
+  target_link_libraries(swap2_oot_coop_net PUBLIC swap2_oot_coop_protocol PRIVATE enet)
+  set(SWAP2_OOT_COOP_AVAILABLE ON)
+else()
+  message(WARNING "OoT co-op submodule is absent; build continues without co-op. Clone with --recurse-submodules.")
+endif()
+
 get_filename_component(ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 set(HOST ${ROOT}/dm/host)
 set(GFX ${ROOT}/dm/gfx)
@@ -43,6 +77,9 @@ endforeach()
 file(GLOB HOST_C CONFIGURE_DEPENDS ${HOST}/*.c)
 list(REMOVE_ITEM HOST_C ${HOST}/hle_movie_avc.c)   # VideoToolbox: dm/host/plat/movie_avc_android.c stands in
 list(APPEND HOST_C ${HOST}/plat/plat_android.c ${HOST}/plat/movie_avc_android.c ${HOST}/plat/front_android.c)
+if(SWAP2_OOT_COOP_AVAILABLE)
+  list(APPEND HOST_C ${HOST}/coop_android.cpp)
+endif()
 # Audio (AAudio, in hle_audio.c), AAC and H.264 (AMediaCodec), input, motion, rumble and the JNI bindings: dm/host/android
 file(GLOB HOST_ANDROID_C CONFIGURE_DEPENDS ${HOST}/android/*.c)
 list(APPEND HOST_C ${HOST_ANDROID_C})
@@ -93,6 +130,10 @@ function(nxhost_add tgt game)
   target_link_options(${tgt} PRIVATE -Wl,-Bsymbolic -Wl,--no-undefined -Wl,--error-limit=0 -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/libnxhost.map)
   set_target_properties(${tgt} PROPERTIES LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/libnxhost.map)
   target_link_libraries(${tgt} PRIVATE vpx zstddec aaudio mediandk android log m dl z)   # libvulkan.so is opened at run time (vka_dev.c)
+  if(SWAP2_OOT_COOP_AVAILABLE)
+    target_link_libraries(${tgt} PRIVATE swap2_oot_coop_net)
+    target_compile_definitions(${tgt} PRIVATE SWAP2_OOT_COOP=1)
+  endif()
 endfunction()
 
 if(NX_RUNTIME_PROFILE)

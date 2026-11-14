@@ -1,0 +1,4 @@
+[submodule "third_party/oot-remake-multiplayer"]
+	path = third_party/oot-remake-multiplayer
+	url = https://github.com/daurosk/oot-remake-multiplayer.git
+	branch = v0.10.1
